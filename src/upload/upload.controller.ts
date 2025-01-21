@@ -1,19 +1,17 @@
-require('dotenv').config();
-
 import {
   Controller,
   Post,
   UseInterceptors,
   UploadedFile,
   BadRequestException,
-  Get
+  Get,
 } from '@nestjs/common';
 import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Express } from 'express';
+import { ConfigService } from '@nestjs/config';
 import { diskStorage, memoryStorage } from 'multer';
 import { Buffer } from 'buffer';
-// import { v4 as uuidv4 } from 'uuid';
 import { google } from '@google-cloud/documentai/build/protos/protos';
 
 interface DocumentData {
@@ -34,7 +32,7 @@ export class UploadController {
     return data;
   }
 
-  constructor() {
+  constructor(private configService: ConfigService) {
     this.client = new DocumentProcessorServiceClient();
   }
 
@@ -58,21 +56,24 @@ export class UploadController {
 
     console.log(file);
 
-    const projectId = process.env.PROJECT_ID;
-    const location = process.env.LOCATION;
-    const processorId = process.env.PROCESSOR_ID;
+    const projectId = this.configService.get<string>('PROJECT_ID');
+    const location = this.configService.get<string>('LOCATION');
+    const processorId = this.configService.get<string>('PROCESSOR_ID');
+
     const name = `projects/${projectId}/locations/${location}/processors/${processorId}`;
+
     // Convertir a Base 64
     const encodedImage = Buffer.from(file.buffer).toString('base64');
     const request = {
       name,
-      RawDocument: {
-        content: encodedImage,
+      rawDocument: {
         mimeType: file.mimetype,
-      }
+        content: encodedImage,
+      },
     };
 
-    console.log('Request: ', JSON.stringify(request, null, 2));
+    //console.log('Request: ', JSON.stringify(request, null, 2));
+    console.log(`${name}`);
 
     try {
       const [result] = await this.client.processDocument(request);

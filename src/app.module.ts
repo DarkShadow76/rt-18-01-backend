@@ -4,6 +4,7 @@ import { AppService } from './app.service';
 import { UploadModule } from './upload/upload.module';
 import { ConfigModule } from '@nestjs/config';
 import { UploadController } from './upload/upload.controller';
+import { InvoiceModule } from './invoice/invoice.module';
 
 @Module({
   imports: [
@@ -11,6 +12,7 @@ import { UploadController } from './upload/upload.controller';
       isGlobal: true,
     }),
     UploadModule,
+    InvoiceModule,
   ],
   controllers: [AppController, UploadController],
   providers: [AppService],

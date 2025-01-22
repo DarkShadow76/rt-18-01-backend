@@ -10,13 +10,11 @@ import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Express } from 'express';
 import { ConfigService } from '@nestjs/config';
-import { diskStorage, memoryStorage } from 'multer';
+import { memoryStorage } from 'multer';
 import { Buffer } from 'buffer';
 import { google } from '@google-cloud/documentai/build/protos/protos';
-
-interface DocumentData {
-  text: string;
-}
+import { InvoiceService } from 'src/invoice/invoice.service';
+import { DocumentData } from 'src/models/document-data.interface';
 
 @Controller('upload')
 export class UploadController {
@@ -25,14 +23,74 @@ export class UploadController {
   private extractDataFromDocument(
     document: google.cloud.documentai.v1.IDocument,
   ): DocumentData {
-    const data: DocumentData = {
-      text: document.text || '',
+    const extractedData: DocumentData = {
+      invoiceNumber: '',
+      billTo: '',
+      dueDate: '',
+      totalAmount: 0,
     };
 
-    return data;
+    const fullText = document.text || '';
+
+    const pages = document.pages || [];
+
+    for (const page of pages) {
+      const paragraphs = page.paragraphs || [];
+
+      for (const paragraph of paragraphs) {
+        const paragraphText = paragraph.layout.textAnchor.textSegments
+          .map((segment) => {
+            const startIndex = Number(segment.startIndex);
+            const endIndex = Number(segment.endIndex);
+            return fullText.substring(startIndex, endIndex);
+          })
+          .join('');
+
+        if (paragraphText.includes('Invoice no:')) {
+          extractedData.invoiceNumber = paragraphText
+            .split('Invoice no:')[1]
+            .split('\n')[0]
+            .trim();
+        }
+
+        if (paragraphText.includes('FROM:')) {
+          extractedData.billTo = paragraphText
+            .split('FROM:')[1]
+            .split('\n')[0]
+            .trim();
+        }
+
+        if (paragraphText.includes('Due Date:')) {
+          extractedData.dueDate = paragraphText
+            .split('Due Date:')[1]
+            .split('\n')[0]
+            .trim();
+        }
+
+        if (paragraphText.includes('BALANCE DUE')) {
+          const balanceDueMatch = paragraphText.match(
+            /BALANCE DUE\s*\$?([\d,.]+)/,
+          );
+          if (balanceDueMatch) {
+            extractedData.totalAmount =
+              parseFloat(balanceDueMatch[1].replace(/,/g, '')) || 0;
+          }
+        }
+      }
+    }
+
+    if (!extractedData.dueDate) {
+      console.warn('Due date not found in the document:', fullText);
+      throw new BadRequestException('Due date cannot be empty');
+    }
+
+    return extractedData;
   }
 
-  constructor(private configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService, // Injeccion de Depencias
+    private readonly invoiceService: InvoiceService,
+  ) {
     this.client = new DocumentProcessorServiceClient();
   }
 
@@ -54,7 +112,7 @@ export class UploadController {
       );
     }
 
-    console.log(file);
+    // console.log(file);
 
     const projectId = this.configService.get<string>('PROJECT_ID');
     const location = this.configService.get<string>('LOCATION');
@@ -72,8 +130,8 @@ export class UploadController {
       },
     };
 
-    //console.log('Request: ', JSON.stringify(request, null, 2));
-    console.log(`${name}`);
+    // console.log('Request: ', JSON.stringify(request, null, 2));
+    // console.log(`${name}`);
 
     try {
       const [result] = await this.client.processDocument(request);
@@ -81,6 +139,8 @@ export class UploadController {
 
       // Getting Text
       const responseData = this.extractDataFromDocument(document);
+
+      await this.invoiceService.saveInvoiceData(responseData);
 
       return responseData;
     } catch (error) {

@@ -12,17 +12,15 @@ import { Express } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { memoryStorage } from 'multer';
 import { Buffer } from 'buffer';
-import { google } from '@google-cloud/documentai/build/protos/protos';
 import { InvoiceService } from 'src/invoice/invoice.service';
 import { DocumentData } from 'src/models/document-data.interface';
+import logger from 'src/logger';
 
 @Controller('upload')
 export class UploadController {
   private client: DocumentProcessorServiceClient;
 
-  private extractDataFromDocument(
-    document: google.cloud.documentai.v1.IDocument,
-  ): DocumentData {
+  private extractDataFromDocument(response: any): DocumentData {
     const extractedData: DocumentData = {
       invoiceNumber: '',
       billTo: '',
@@ -30,65 +28,61 @@ export class UploadController {
       totalAmount: 0,
     };
 
-    const fullText = document.text || '';
+    const document = response.document;
 
-    const pages = document.pages || [];
+    if (!document || !document.pages || document.pages.length === 0) {
+      throw new BadRequestException('Document does not contain any pages.');
+    }
 
-    for (const page of pages) {
-      const paragraphs = page.paragraphs || [];
+    // console.log('Full Document Response:', JSON.stringify(document, null, 2));
 
-      for (const paragraph of paragraphs) {
-        const paragraphText = paragraph.layout.textAnchor.textSegments
-          .map((segment) => {
-            const startIndex = Number(segment.startIndex);
-            const endIndex = Number(segment.endIndex);
-            return fullText.substring(startIndex, endIndex);
-          })
-          .join('');
-
-        if (paragraphText.includes('Invoice no:')) {
-          extractedData.invoiceNumber = paragraphText
-            .split('Invoice no:')[1]
-            .split('\n')[0]
-            .trim();
-        }
-
-        if (paragraphText.includes('FROM:')) {
-          extractedData.billTo = paragraphText
-            .split('FROM:')[1]
-            .split('\n')[0]
-            .trim();
-        }
-
-        if (paragraphText.includes('Due Date:')) {
-          extractedData.dueDate = paragraphText
-            .split('Due Date:')[1]
-            .split('\n')[0]
-            .trim();
-        }
-
-        if (paragraphText.includes('BALANCE DUE')) {
-          const balanceDueMatch = paragraphText.match(
-            /BALANCE DUE\s*\$?([\d,.]+)/,
-          );
-          if (balanceDueMatch) {
-            extractedData.totalAmount =
-              parseFloat(balanceDueMatch[1].replace(/,/g, '')) || 0;
-          }
+    if (document.entities && document.entities.length > 0) {
+      for (const entity of document.entities) {
+        switch (entity.type) {
+          case 'invoice_id':
+            extractedData.invoiceNumber = entity.mentionText.trim();
+            break;
+          case 'due_date':
+            extractedData.dueDate = entity.mentionText.trim();
+            break;
+          case 'receiver_name':
+            extractedData.billTo = entity.mentionText.trim();
+            break;
+          case 'total_amount':
+            extractedData.totalAmount = this.parseTotalAmount(
+              entity.mentionText.trim(),
+            );
+            break;
+          default:
+            console.warn(`Unknown entity type: ${entity.type}`);
+            break;
         }
       }
+    } else {
+      console.warn('No entities found in the document.');
     }
 
     if (!extractedData.dueDate) {
-      console.warn('Due date not found in the document:', fullText);
+      console.warn(
+        'Due date was not found in the extracted data:',
+        extractedData,
+      );
       throw new BadRequestException('Due date cannot be empty');
     }
 
-    return extractedData;
+    return extractedData; // Retorna el objeto con los datos extraídos
+  }
+
+  private parseTotalAmount(totalString: string): number {
+    // Eliminar símbolos de moneda y comas
+    const cleanedString = totalString.replace(/[$,]/g, '').trim();
+    const amount = parseFloat(cleanedString);
+
+    return isNaN(amount) ? 0 : amount;
   }
 
   constructor(
-    private readonly configService: ConfigService, // Injeccion de Depencias
+    private readonly configService: ConfigService,
     private readonly invoiceService: InvoiceService,
   ) {
     this.client = new DocumentProcessorServiceClient();
@@ -99,11 +93,10 @@ export class UploadController {
     FileInterceptor('file', {
       storage: memoryStorage(),
     }),
-  ) // Nombre de campo del formulario
+  )
   async uploadInvoice(@UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('No File Uploaded');
 
-    // Admite mas tipo de Archivos Pero de preferencia estos solamente
     const validMimeTypes = ['application/pdf', 'image/jpeg', 'image/png'];
 
     if (!validMimeTypes.includes(file.mimetype)) {
@@ -121,12 +114,12 @@ export class UploadController {
     const name = `projects/${projectId}/locations/${location}/processors/${processorId}`;
 
     // Convertir a Base 64
-    const encodedImage = Buffer.from(file.buffer).toString('base64');
+    const encodedDocument = Buffer.from(file.buffer).toString('base64');
     const request = {
       name,
       rawDocument: {
         mimeType: file.mimetype,
-        content: encodedImage,
+        content: encodedDocument,
       },
     };
 
@@ -135,15 +128,25 @@ export class UploadController {
 
     try {
       const [result] = await this.client.processDocument(request);
+
+      // console.log('Full response:', JSON.stringify(result, null, 2));
+
+      logger.info('Document processed successfully');
+
       const { document } = result;
 
-      // Getting Text
-      const responseData = this.extractDataFromDocument(document);
+      if (!document || !document.text) {
+        throw new BadRequestException('Document does not contain text.');
+      }
+
+      // Getting Values
+      const responseData = this.extractDataFromDocument(result);
 
       await this.invoiceService.saveInvoiceData(responseData);
 
       return responseData;
     } catch (error) {
+      logger.error('Error at Processing Invoice: ' + error.message); // Log de error
       throw new BadRequestException(
         'Error at Processing Invoice: ' + error.message,
       );

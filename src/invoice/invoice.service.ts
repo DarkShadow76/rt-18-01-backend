@@ -13,6 +13,18 @@ export class InvoiceService {
     );
   }
 
+  async getAllInvoices(){
+    const {data, error} = await this.supabase
+    .from('invoices')
+    .select('*')
+
+    if(error) {
+      throw new Error('Error Getting Invoices: ' + error.message)
+    }
+
+    return data;
+  }
+
   async saveInvoiceData(data: any) {
     const { error } = await this.supabase
       .from('invoices')

@@ -154,7 +154,13 @@ export class UploadController {
   }
 
   @Get('invoice')
-  getInvoices(): String {
-    return 'Here you got the json list of Invoices';
+  async getInvoices() {
+    try {
+      const invoices = await this.invoiceService.getAllInvoices();
+
+      return invoices;
+    } catch (error) {
+      throw new BadRequestException('Error fetching invoices: ' + error.message);
+    }
   }
 }

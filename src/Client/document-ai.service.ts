@@ -1,12 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
 import { ConfigService } from '@nestjs/config';
 import { Buffer } from 'buffer';
+import { Storage } from '@google-cloud/storage';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Injectable()
-export class DocumentAIService {
+export class DocumentAIService implements OnModuleInit {
   private client: DocumentProcessorServiceClient;
-
+  private storage: Storage;
   private projectId: string;
   private location: string;
   private processorId: string;
@@ -17,6 +20,24 @@ export class DocumentAIService {
     const projectId = this.configService.get<string>('PROJECT_ID');
     const location = this.configService.get<string>('LOCATION');
     const processorId = this.configService.get<string>('PROCESSOR_ID');
+  }
+  async onModuleInit() {
+    try {
+      const credentialPath = path.join('/tmp', 'google-credentials.json');
+      fs.writeFileSync(credentialPath,
+        this.configService.get<string>('GOOGLE_APPLICATION_CREDENTIALS'),
+      );
+
+      this.storage = new Storage({
+        keyFilename: credentialPath,
+      });
+      console.log('Google Cloud Storage Client Started');
+    } catch (error) {
+      console.log(
+        'Error Starting Google Cloud Storage:',
+        error,
+      );
+    }
   }
 
   async processDocument(

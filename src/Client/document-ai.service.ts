@@ -23,20 +23,28 @@ export class DocumentAIService implements OnModuleInit {
   }
   async onModuleInit() {
     try {
-      const credentialPath = path.join('/tmp', 'google-credentials.json');
-      fs.writeFileSync(credentialPath,
-        this.configService.get<string>('GOOGLE_APPLICATION_CREDENTIALS'),
-      );
+      const projectId = process.env.GCP_PROJECT_ID;
+      const serviceAccountEmail = process.env.GCP_SERVICE_ACCOUNT_EMAIL;
+      const privateKey = process.env.GCP_PRIVATE_KEY;
+
+      if (!projectId || !serviceAccountEmail || !privateKey) {
+        console.error('Missing GCP credentials in environment variables!');
+        return;
+      }
 
       this.storage = new Storage({
-        keyFilename: credentialPath,
+        projectId,
+        keyFilename: null,
+
+        credentials: {
+          client_email: serviceAccountEmail,
+          private_key: privateKey.replace(/\\n/g, '\n'),
+        },
       });
+
       console.log('Google Cloud Storage Client Started');
     } catch (error) {
-      console.log(
-        'Error Starting Google Cloud Storage:',
-        error,
-      );
+      console.error('Error Starting Google Cloud Storage:', error);
     }
   }
 

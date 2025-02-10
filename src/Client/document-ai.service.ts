@@ -3,24 +3,14 @@ import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
 import { ConfigService } from '@nestjs/config';
 import { Buffer } from 'buffer';
 import { Storage } from '@google-cloud/storage';
-import * as fs from 'fs';
-import * as path from 'path';
 
 @Injectable()
 export class DocumentAIService implements OnModuleInit {
   private client: DocumentProcessorServiceClient;
   private storage: Storage;
-  private projectId: string;
-  private location: string;
-  private processorId: string;
 
-  constructor(private configService: ConfigService) {
-    this.client = new DocumentProcessorServiceClient();
+  constructor(private configService: ConfigService) {}
 
-    const projectId = this.configService.get<string>('PROJECT_ID');
-    const location = this.configService.get<string>('LOCATION');
-    const processorId = this.configService.get<string>('PROCESSOR_ID');
-  }
   async onModuleInit() {
     try {
       const projectId = process.env.GCP_PROJECT_ID;
@@ -36,6 +26,14 @@ export class DocumentAIService implements OnModuleInit {
         projectId,
         keyFilename: null,
 
+        credentials: {
+          client_email: serviceAccountEmail,
+          private_key: privateKey.replace(/\\n/g, '\n'),
+        },
+      });
+
+      this.client = new DocumentProcessorServiceClient({
+        projectId,
         credentials: {
           client_email: serviceAccountEmail,
           private_key: privateKey.replace(/\\n/g, '\n'),

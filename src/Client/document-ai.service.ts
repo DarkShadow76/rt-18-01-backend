@@ -13,30 +13,31 @@ export class DocumentAIService implements OnModuleInit {
 
   async onModuleInit() {
     try {
-      const projectId = process.env.GCP_PROJECT_ID;
+      const projectId = process.env.PROJECT_ID;
+      const projectIdGCP= process.env.GCP_PROJECT_ID;
       const serviceAccountEmail = process.env.GCP_SERVICE_ACCOUNT_EMAIL;
-      const privateKey = process.env.GCP_PRIVATE_KEY.replace(/\\n/g, '\n');
+      const private_key = process.env.GCP_PRIVATE_KEY.replace(/\\n/g, '\n');
 
-      if (!projectId || !serviceAccountEmail || !privateKey) {
+      if (!projectId || !serviceAccountEmail || !private_key) {
         console.error('Missing GCP credentials in environment variables!');
         return;
       }
 
       this.storage = new Storage({
-        projectId,
+        projectId: projectIdGCP,
         keyFilename: null,
 
         credentials: {
           client_email: serviceAccountEmail,
-          private_key: privateKey,
+          private_key,
         },
       });
 
       this.client = new DocumentProcessorServiceClient({
-        projectId,
+        projectId: projectIdGCP,
         credentials: {
           client_email: serviceAccountEmail,
-          private_key: privateKey,
+          private_key,
         },
       });
 

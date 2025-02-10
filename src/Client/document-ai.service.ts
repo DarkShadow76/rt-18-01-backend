@@ -15,7 +15,7 @@ export class DocumentAIService implements OnModuleInit {
     try {
       const projectId = process.env.GCP_PROJECT_ID;
       const serviceAccountEmail = process.env.GCP_SERVICE_ACCOUNT_EMAIL;
-      const privateKey = process.env.GCP_PRIVATE_KEY;
+      const privateKey = process.env.GCP_PRIVATE_KEY.replace(/\\n/g, '\n');
 
       if (!projectId || !serviceAccountEmail || !privateKey) {
         console.error('Missing GCP credentials in environment variables!');
@@ -28,7 +28,7 @@ export class DocumentAIService implements OnModuleInit {
 
         credentials: {
           client_email: serviceAccountEmail,
-          private_key: privateKey.replace(/\\n/g, '\n'),
+          private_key: privateKey,
         },
       });
 
@@ -36,7 +36,7 @@ export class DocumentAIService implements OnModuleInit {
         projectId,
         credentials: {
           client_email: serviceAccountEmail,
-          private_key: privateKey.replace(/\\n/g, '\n'),
+          private_key: privateKey,
         },
       });
 

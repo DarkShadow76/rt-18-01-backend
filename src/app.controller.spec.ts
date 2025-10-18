@@ -15,8 +15,8 @@ describe('AppController', () => {
   });
 
   describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+    it('should return "Domus AI - Reto Tecnico Backend"', () => {
+      expect(appController.getHello()).toBe('Domus AI - Reto Tecnico Backend');
     });
   });
 });

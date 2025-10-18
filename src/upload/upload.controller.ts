@@ -12,9 +12,9 @@ import { Express } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { memoryStorage } from 'multer';
 import { Buffer } from 'buffer';
-import { InvoiceService } from 'src/invoice/invoice.service';
-import { DocumentData } from 'src/models/document-data.interface';
-import logger from 'src/logger';
+import { InvoiceService } from '../invoice/invoice.service';
+import { DocumentData } from '../models/document-data.interface';
+import logger from '../logger';
 
 @Controller('upload')
 export class UploadController {

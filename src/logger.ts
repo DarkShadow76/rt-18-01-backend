@@ -1,3 +1,6 @@
+// Legacy logger - deprecated
+// Use LoggerService from src/common/logger/logger.service.ts instead
+
 import { createLogger, format, transports } from 'winston';
 import * as path from 'path';
 
@@ -12,7 +15,7 @@ const logger = createLogger({
       filename: path.join(__dirname, '..', 'logs', 'app.log'),
       level: 'info',
     }),
-    new transports.Console(), // Opcional: para mostrar logs en la consola
+    new transports.Console(),
   ],
 });
 

@@ -1,31 +1,17 @@
 import { Invoice, InvoiceFilters, InvoiceQueryOptions, InvoiceStats, DuplicateDetectionResult, AuditEntry } from './invoice.entity';
+import type { AuditSearchCriteria } from '../repositories/interfaces/invoice-repository.interface';
 
-// Repository interfaces
-export interface IInvoiceRepository {
-  save(invoice: Invoice): Promise<Invoice>;
-  findById(id: string): Promise<Invoice | null>;
-  findByInvoiceNumber(invoiceNumber: string): Promise<Invoice | null>;
-  findAll(options?: InvoiceQueryOptions): Promise<{
-    invoices: Invoice[];
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-  }>;
-  update(id: string, updates: Partial<Invoice>): Promise<Invoice>;
-  delete(id: string): Promise<void>;
-  findDuplicates(invoice: Partial<Invoice>): Promise<Invoice[]>;
-  getStats(filters?: InvoiceFilters): Promise<InvoiceStats>;
-  findByContentHash(contentHash: string): Promise<Invoice[]>;
-}
-
-export interface IAuditRepository {
-  save(auditEntry: AuditEntry): Promise<AuditEntry>;
-  findByInvoiceId(invoiceId: string): Promise<AuditEntry[]>;
-  findByAction(action: string): Promise<AuditEntry[]>;
-  findByDateRange(startDate: Date, endDate: Date): Promise<AuditEntry[]>;
-  findByUserId(userId: string): Promise<AuditEntry[]>;
-}
+// Repository interfaces - Import from dedicated interface files
+export type { 
+  IInvoiceRepository, 
+  IAuditRepository,
+  ProcessingMetrics,
+  AuditQueryOptions,
+  AuditSearchCriteria,
+  AuditActionStats,
+  UserActivityStats,
+  RepositoryHealthStatus
+} from '../repositories/interfaces/invoice-repository.interface';
 
 // Service interfaces
 export interface IFileValidationService {
@@ -169,15 +155,7 @@ export interface ProcessingStatus {
   updatedAt: Date;
 }
 
-export interface AuditSearchCriteria {
-  invoiceId?: string;
-  action?: string;
-  userId?: string;
-  dateFrom?: Date;
-  dateTo?: Date;
-  limit?: number;
-  offset?: number;
-}
+// AuditSearchCriteria is imported from repository interfaces
 
 // Configuration interfaces
 export interface DatabaseConfig {

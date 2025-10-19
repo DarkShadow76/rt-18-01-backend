@@ -1,11 +1,16 @@
 // Entity exports
-export * from './invoice.entity';
 export * from './service.interfaces';
 export * from './document-data.interface';
 
-// Re-export commonly used types
-export type {
+// Re-export commonly used types and classes
+export {
   Invoice,
+  AuditAction,
+  DuplicateDetectionMethod,
+  DuplicateResolution,
+} from './invoice.entity';
+
+export type {
   InvoiceMetadata,
   AuditEntry,
   InvoiceFilters,
@@ -16,8 +21,6 @@ export type {
 } from './invoice.entity';
 
 export type {
-  IInvoiceRepository,
-  IAuditRepository,
   IFileValidationService,
   IDocumentAIService,
   IDataExtractionService,
@@ -33,6 +36,18 @@ export type {
   AppConfig,
 } from './service.interfaces';
 
+// Repository interfaces
+export type {
+  IInvoiceRepository,
+  IAuditRepository,
+  ProcessingMetrics,
+  AuditQueryOptions,
+  AuditSearchCriteria,
+  AuditActionStats,
+  UserActivityStats,
+  RepositoryHealthStatus,
+} from '../repositories/interfaces/invoice-repository.interface';
+
 export type {
   DocumentData,
   EnhancedDocumentData,
@@ -41,12 +56,6 @@ export type {
 } from './document-data.interface';
 
 // Enum re-exports for convenience
-export {
-  AuditAction,
-  DuplicateDetectionMethod,
-  DuplicateResolution,
-} from './invoice.entity';
-
 export {
   InvoiceStatus,
   ErrorType,

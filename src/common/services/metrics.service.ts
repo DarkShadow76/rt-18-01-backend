@@ -30,6 +30,37 @@ export class MetricsService {
     this.startPeriodicLogging();
   }
 
+  // Invoice processing specific metrics
+  recordProcessingSuccess(processingTimeMs: number): void {
+    this.incrementCounter('invoice.processing.success');
+    this.recordHistogram('invoice.processing.time', processingTimeMs);
+    this.logger.debug('Recorded processing success', 'MetricsService', {
+      processingTimeMs
+    });
+  }
+
+  recordProcessingFailure(processingTimeMs: number): void {
+    this.incrementCounter('invoice.processing.failure');
+    this.recordHistogram('invoice.processing.time', processingTimeMs);
+    this.logger.debug('Recorded processing failure', 'MetricsService', {
+      processingTimeMs
+    });
+  }
+
+  recordValidationFailure(validationType: string): void {
+    this.incrementCounter('invoice.validation.failure', 1, { type: validationType });
+    this.logger.debug('Recorded validation failure', 'MetricsService', {
+      validationType
+    });
+  }
+
+  recordDuplicateDetection(detectionMethod: string): void {
+    this.incrementCounter('invoice.duplicate.detected', 1, { method: detectionMethod });
+    this.logger.debug('Recorded duplicate detection', 'MetricsService', {
+      detectionMethod
+    });
+  }
+
   // Counter methods
   incrementCounter(name: string, value: number = 1, tags?: Record<string, string>): void {
     const key = this.getMetricKey(name, tags);

@@ -100,7 +100,11 @@ export class DocumentAIService {
     return `projects/${projectId}/locations/${location}/processors/${processorId}`;
   }
 
-  async processDocument(
+  async processDocument(file: Express.Multer.File): Promise<DocumentProcessingResult> {
+    return this.processDocumentBuffer(file.buffer, file.mimetype, {});
+  }
+
+  async processDocumentBuffer(
     fileBuffer: Buffer, 
     mimeType: string, 
     options: DocumentProcessingOptions = {}

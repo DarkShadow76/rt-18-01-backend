@@ -57,6 +57,13 @@ export interface IAuditService {
   logAction(invoiceId: string, action: string, changes: Record<string, any>, metadata?: Record<string, any>, userId?: string): Promise<void>;
   getAuditTrail(invoiceId: string): Promise<AuditEntry[]>;
   searchAuditLogs(criteria: AuditSearchCriteria): Promise<AuditEntry[]>;
+  logInvoiceCreated(invoiceId: string, invoiceData: Record<string, any>, userId?: string, correlationId?: string): Promise<void>;
+  logInvoiceUpdated(invoiceId: string, oldData: Record<string, any>, newData: Record<string, any>, userId?: string, correlationId?: string): Promise<void>;
+  logInvoiceDeleted(invoiceId: string, invoiceData: Record<string, any>, userId?: string, correlationId?: string): Promise<void>;
+  logStatusChanged(invoiceId: string, oldStatus: string, newStatus: string, reason?: string, userId?: string, correlationId?: string): Promise<void>;
+  logProcessingEvent(invoiceId: string, eventType: 'started' | 'completed' | 'failed' | 'retried', details: Record<string, any>, userId?: string, correlationId?: string): Promise<void>;
+  logDuplicateDetected(invoiceId: string, originalInvoiceId: string, similarityScore: number, detectionMethod: string, userId?: string, correlationId?: string): Promise<void>;
+  logValidationFailed(invoiceId: string, validationErrors: any[], validationType: string, userId?: string, correlationId?: string): Promise<void>;
 }
 
 // Supporting types and interfaces

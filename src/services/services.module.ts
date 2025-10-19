@@ -5,10 +5,14 @@ import { DataExtractionService } from './data-extraction/data-extraction.service
 import { InvoiceValidationService } from './invoice-validation/invoice-validation.service';
 import { DuplicateDetectionService } from './duplicate-detection/duplicate-detection.service';
 import { AuditService } from './audit/audit.service';
+import { InvoiceProcessingModule } from './invoice-processing/invoice-processing.module';
 import { RepositoriesModule } from '../repositories/repositories.module';
 
 @Module({
-  imports: [RepositoriesModule],
+  imports: [
+    RepositoriesModule,
+    InvoiceProcessingModule
+  ],
   providers: [
     FileValidationService,
     DocumentAIService,
@@ -24,6 +28,7 @@ import { RepositoriesModule } from '../repositories/repositories.module';
     InvoiceValidationService,
     DuplicateDetectionService,
     AuditService,
+    InvoiceProcessingModule,
   ],
 })
 export class ServicesModule {}

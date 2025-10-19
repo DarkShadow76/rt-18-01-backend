@@ -51,6 +51,18 @@ export interface IInvoiceProcessingService {
   reprocessInvoice(invoiceId: string, options?: ProcessingOptions): Promise<Invoice>;
   getProcessingStatus(invoiceId: string): Promise<ProcessingStatus>;
   cancelProcessing(invoiceId: string): Promise<void>;
+  getProcessingStatistics(): Promise<{
+    activeProcessing: number;
+    completedToday: number;
+    failedToday: number;
+    averageProcessingTime: number;
+    duplicateRate: number;
+  }>;
+  healthCheck(): Promise<{
+    status: string;
+    activeProcessing: number;
+    dependencies: Record<string, boolean>;
+  }>;
 }
 
 export interface IAuditService {

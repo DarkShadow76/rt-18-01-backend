@@ -1,5 +1,7 @@
 import { InvoiceStatus } from '../common/dto/upload-invoice.dto';
 
+export { InvoiceStatus };
+
 export interface InvoiceMetadata {
   originalFileName: string;
   fileSize: number;

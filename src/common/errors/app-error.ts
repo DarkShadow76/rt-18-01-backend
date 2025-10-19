@@ -1,5 +1,7 @@
 import { ErrorType } from '../dto/upload-invoice.dto';
 
+export { ErrorType };
+
 export class AppError extends Error {
   constructor(
     public readonly type: ErrorType,

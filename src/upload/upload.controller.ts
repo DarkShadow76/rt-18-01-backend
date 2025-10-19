@@ -5,162 +5,460 @@ import {
   UploadedFile,
   BadRequestException,
   Get,
+  HttpStatus,
+  HttpCode,
+  Body,
+  Query,
+  Inject,
+  Logger
 } from '@nestjs/common';
-import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Express } from 'express';
-import { ConfigService } from '@nestjs/config';
 import { memoryStorage } from 'multer';
-import { Buffer } from 'buffer';
-import { InvoiceService } from '../invoice/invoice.service';
-import { DocumentData } from '../models/document-data.interface';
-import logger from '../logger';
+import { 
+  ApiTags, 
+  ApiOperation, 
+  ApiResponse, 
+  ApiConsumes, 
+  ApiBody,
+  ApiQuery
+} from '@nestjs/swagger';
+import { 
+  UploadInvoiceDto, 
+  InvoiceResponseDto, 
+  SuccessResponseDto, 
+  ErrorResponseDto,
+  PaginationDto,
+  PaginatedResponseDto
+} from '../common/dto/upload-invoice.dto';
+import { IInvoiceProcessingService } from '../models/service.interfaces';
+import { AppError } from '../common/errors/app-error';
+import { LoggerService } from '../common/logger/logger.service';
+import * as crypto from 'crypto';
 
+@ApiTags('Invoice Upload')
 @Controller('upload')
 export class UploadController {
-  private client: DocumentProcessorServiceClient;
-
-  private extractDataFromDocument(response: any): DocumentData {
-    const extractedData: DocumentData = {
-      invoiceNumber: '',
-      billTo: '',
-      dueDate: '',
-      totalAmount: 0,
-    };
-
-    const document = response.document;
-
-    if (!document || !document.pages || document.pages.length === 0) {
-      throw new BadRequestException('Document does not contain any pages.');
-    }
-
-    // console.log('Full Document Response:', JSON.stringify(document, null, 2));
-
-    if (document.entities && document.entities.length > 0) {
-      for (const entity of document.entities) {
-        switch (entity.type) {
-          case 'invoice_id':
-            extractedData.invoiceNumber = entity.mentionText.trim();
-            break;
-          case 'due_date':
-            extractedData.dueDate = entity.mentionText.trim();
-            break;
-          case 'receiver_name':
-            extractedData.billTo = entity.mentionText.trim();
-            break;
-          case 'total_amount':
-            extractedData.totalAmount = this.parseTotalAmount(
-              entity.mentionText.trim(),
-            );
-            break;
-          default:
-            console.warn(`Unknown entity type: ${entity.type}`);
-            break;
-        }
-      }
-    } else {
-      console.warn('No entities found in the document.');
-    }
-
-    if (!extractedData.dueDate) {
-      console.warn(
-        'Due date was not found in the extracted data:',
-        extractedData,
-      );
-      throw new BadRequestException('Due date cannot be empty');
-    }
-
-    return extractedData; // Retorna el objeto con los datos extraídos
-  }
-
-  private parseTotalAmount(totalString: string): number {
-    // Eliminar símbolos de moneda y comas
-    const cleanedString = totalString.replace(/[$,]/g, '').trim();
-    const amount = parseFloat(cleanedString);
-
-    return isNaN(amount) ? 0 : amount;
-  }
+  private readonly logger = new Logger(UploadController.name);
 
   constructor(
-    private readonly configService: ConfigService,
-    private readonly invoiceService: InvoiceService,
-  ) {
-    this.client = new DocumentProcessorServiceClient();
-  }
+    @Inject('IInvoiceProcessingService') 
+    private readonly invoiceProcessingService: IInvoiceProcessingService,
+    private readonly loggerService: LoggerService
+  ) {}
 
   @Post('invoice')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ 
+    summary: 'Upload and process invoice document',
+    description: 'Upload an invoice file (PDF, PNG, JPG, JPEG) for processing and data extraction'
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: 'Invoice file upload',
+    type: UploadInvoiceDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: 'Invoice processed successfully',
+    type: SuccessResponseDto<InvoiceResponseDto>,
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Invalid file or processing error',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.UNPROCESSABLE_ENTITY,
+    description: 'File validation failed',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.CONFLICT,
+    description: 'Duplicate invoice detected',
+    type: ErrorResponseDto,
+  })
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
+      limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB limit
+      },
     }),
   )
-  async uploadInvoice(@UploadedFile() file: Express.Multer.File) {
-    if (!file) throw new BadRequestException('No File Uploaded');
+  async uploadInvoice(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() uploadDto?: UploadInvoiceDto
+  ): Promise<SuccessResponseDto<InvoiceResponseDto>> {
+    const correlationId = crypto.randomUUID();
+    const startTime = Date.now();
 
-    const validMimeTypes = ['application/pdf', 'image/jpeg', 'image/png'];
-
-    if (!validMimeTypes.includes(file.mimetype)) {
-      throw new BadRequestException(
-        `No Amitted file format: ${file.mimetype}, Upload PDF, JPEG, PNG file`,
-      );
-    }
-
-    // console.log(file);
-
-    const projectId = this.configService.get<string>('PROJECT_ID');
-    const location = this.configService.get<string>('LOCATION');
-    const processorId = this.configService.get<string>('PROCESSOR_ID');
-
-    const name = `projects/${projectId}/locations/${location}/processors/${processorId}`;
-
-    // Convertir a Base 64
-    const encodedDocument = Buffer.from(file.buffer).toString('base64');
-    const request = {
-      name,
-      rawDocument: {
-        mimeType: file.mimetype,
-        content: encodedDocument,
-      },
-    };
-
-    // console.log('Request: ', JSON.stringify(request, null, 2));
-    // console.log(`${name}`);
+    this.logger.log('Invoice upload request received', {
+      filename: file?.originalname,
+      size: file?.size,
+      mimetype: file?.mimetype,
+      correlationId
+    });
 
     try {
-      const [result] = await this.client.processDocument(request);
-
-      // console.log('Full response:', JSON.stringify(result, null, 2));
-
-      logger.info('Document processed successfully');
-
-      const { document } = result;
-
-      if (!document || !document.text) {
-        throw new BadRequestException('Document does not contain text.');
+      if (!file) {
+        throw AppError.validationError(
+          'No file uploaded',
+          { field: 'file' },
+          correlationId
+        );
       }
 
-      // Getting Values
-      const responseData = this.extractDataFromDocument(result);
+      // Process the invoice using the service layer
+      const processedInvoice = await this.invoiceProcessingService.processInvoice(file, {
+        correlationId,
+        forceReprocess: uploadDto?.forceReprocess || false,
+        skipValidation: false,
+        skipDuplicateCheck: false,
+        metadata: {
+          description: uploadDto?.description,
+          uploadSource: 'api'
+        }
+      });
 
-      await this.invoiceService.saveInvoiceData(responseData);
+      const processingTime = Date.now() - startTime;
 
-      return responseData;
+      this.loggerService.logPerformance(
+        {
+          operation: 'invoice-upload',
+          durationMs: processingTime,
+          startTime: new Date(startTime),
+          endTime: new Date()
+        },
+        'UploadController'
+      );
+
+      const response: SuccessResponseDto<InvoiceResponseDto> = {
+        success: true,
+        data: processedInvoice.toResponseDto(),
+        timestamp: new Date().toISOString(),
+        correlationId
+      };
+
+      this.logger.log('Invoice processed successfully', {
+        invoiceId: processedInvoice.id,
+        invoiceNumber: processedInvoice.invoiceNumber,
+        status: processedInvoice.status,
+        processingTimeMs: processingTime,
+        correlationId
+      });
+
+      return response;
+
     } catch (error) {
-      logger.error('Error at Processing Invoice: ' + error.message); // Log de error
-      throw new BadRequestException(
-        'Error at Processing Invoice: ' + error.message,
+      const processingTime = Date.now() - startTime;
+
+      this.loggerService.error(
+        'Invoice processing failed',
+        error.stack,
+        'UploadController',
+        {
+          filename: file?.originalname,
+          processingTimeMs: processingTime,
+          correlationId,
+          error: error.message
+        }
+      );
+
+      // Re-throw AppError instances as-is, wrap others
+      if (error instanceof AppError) {
+        throw error;
+      }
+
+      throw AppError.processingError(
+        `Invoice processing failed: ${error.message}`,
+        { originalError: error.message },
+        correlationId
       );
     }
   }
 
-  @Get('invoice')
-  async getInvoices() {
-    try {
-      const invoices = await this.invoiceService.getAllInvoices();
+  @Get('invoices')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ 
+    summary: 'Get all invoices',
+    description: 'Retrieve a paginated list of all processed invoices'
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Page number (1-based)',
+    example: 1
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Items per page (max 100)',
+    example: 10
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    type: String,
+    description: 'Field to sort by',
+    example: 'createdAt'
+  })
+  @ApiQuery({
+    name: 'sortOrder',
+    required: false,
+    enum: ['asc', 'desc'],
+    description: 'Sort direction',
+    example: 'desc'
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Invoices retrieved successfully',
+    type: SuccessResponseDto<PaginatedResponseDto<InvoiceResponseDto>>,
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Invalid query parameters',
+    type: ErrorResponseDto,
+  })
+  async getInvoices(
+    @Query() paginationDto: PaginationDto
+  ): Promise<SuccessResponseDto<PaginatedResponseDto<InvoiceResponseDto>>> {
+    const correlationId = crypto.randomUUID();
+    const startTime = Date.now();
 
-      return invoices;
+    this.logger.log('Get invoices request received', {
+      pagination: paginationDto,
+      correlationId
+    });
+
+    try {
+      // For now, we'll use a placeholder implementation
+      // In a real implementation, this would use the repository service
+      const mockInvoices: InvoiceResponseDto[] = [];
+      const total = 0;
+
+      const paginatedResult: PaginatedResponseDto<InvoiceResponseDto> = {
+        items: mockInvoices,
+        total,
+        page: paginationDto.page || 1,
+        limit: paginationDto.limit || 10,
+        totalPages: Math.ceil(total / (paginationDto.limit || 10)),
+        hasNext: (paginationDto.page || 1) * (paginationDto.limit || 10) < total,
+        hasPrev: (paginationDto.page || 1) > 1
+      };
+
+      const processingTime = Date.now() - startTime;
+
+      this.loggerService.logPerformance(
+        {
+          operation: 'get-invoices',
+          durationMs: processingTime,
+          startTime: new Date(startTime),
+          endTime: new Date()
+        },
+        'UploadController'
+      );
+
+      const response: SuccessResponseDto<PaginatedResponseDto<InvoiceResponseDto>> = {
+        success: true,
+        data: paginatedResult,
+        timestamp: new Date().toISOString(),
+        correlationId
+      };
+
+      this.logger.log('Invoices retrieved successfully', {
+        count: mockInvoices.length,
+        processingTimeMs: processingTime,
+        correlationId
+      });
+
+      return response;
+
     } catch (error) {
-      throw new BadRequestException('Error fetching invoices: ' + error.message);
+      const processingTime = Date.now() - startTime;
+
+      this.loggerService.error(
+        'Failed to retrieve invoices',
+        error.stack,
+        'UploadController',
+        {
+          pagination: paginationDto,
+          processingTimeMs: processingTime,
+          correlationId,
+          error: error.message
+        }
+      );
+
+      if (error instanceof AppError) {
+        throw error;
+      }
+
+      throw AppError.processingError(
+        `Failed to retrieve invoices: ${error.message}`,
+        { originalError: error.message },
+        correlationId
+      );
+    }
+  }
+
+  @Get('invoices/:id/status')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ 
+    summary: 'Get invoice processing status',
+    description: 'Get the current processing status of an invoice'
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Processing status retrieved successfully',
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: 'Invoice not found',
+    type: ErrorResponseDto,
+  })
+  async getProcessingStatus(
+    @Query('id') invoiceId: string
+  ): Promise<SuccessResponseDto<any>> {
+    const correlationId = crypto.randomUUID();
+
+    this.logger.log('Get processing status request received', {
+      invoiceId,
+      correlationId
+    });
+
+    try {
+      const status = await this.invoiceProcessingService.getProcessingStatus(invoiceId);
+
+      const response: SuccessResponseDto<any> = {
+        success: true,
+        data: status,
+        timestamp: new Date().toISOString(),
+        correlationId
+      };
+
+      return response;
+
+    } catch (error) {
+      this.loggerService.error(
+        'Failed to get processing status',
+        error.stack,
+        'UploadController',
+        {
+          invoiceId,
+          correlationId,
+          error: error.message
+        }
+      );
+
+      if (error instanceof AppError) {
+        throw error;
+      }
+
+      throw AppError.processingError(
+        `Failed to get processing status: ${error.message}`,
+        { originalError: error.message },
+        correlationId
+      );
+    }
+  }
+
+  @Post('invoices/:id/reprocess')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ 
+    summary: 'Reprocess an invoice',
+    description: 'Reprocess an existing invoice'
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Invoice reprocessed successfully',
+    type: SuccessResponseDto<InvoiceResponseDto>,
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: 'Invoice not found',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.CONFLICT,
+    description: 'Invoice cannot be reprocessed in current state',
+    type: ErrorResponseDto,
+  })
+  async reprocessInvoice(
+    @Query('id') invoiceId: string,
+    @Body() options?: { forceReprocess?: boolean }
+  ): Promise<SuccessResponseDto<InvoiceResponseDto>> {
+    const correlationId = crypto.randomUUID();
+    const startTime = Date.now();
+
+    this.logger.log('Reprocess invoice request received', {
+      invoiceId,
+      options,
+      correlationId
+    });
+
+    try {
+      const reprocessedInvoice = await this.invoiceProcessingService.reprocessInvoice(
+        invoiceId,
+        {
+          correlationId,
+          forceReprocess: options?.forceReprocess || false
+        }
+      );
+
+      const processingTime = Date.now() - startTime;
+
+      this.loggerService.logPerformance(
+        {
+          operation: 'invoice-reprocess',
+          durationMs: processingTime,
+          startTime: new Date(startTime),
+          endTime: new Date()
+        },
+        'UploadController'
+      );
+
+      const response: SuccessResponseDto<InvoiceResponseDto> = {
+        success: true,
+        data: reprocessedInvoice.toResponseDto(),
+        timestamp: new Date().toISOString(),
+        correlationId
+      };
+
+      this.logger.log('Invoice reprocessed successfully', {
+        invoiceId,
+        status: reprocessedInvoice.status,
+        processingTimeMs: processingTime,
+        correlationId
+      });
+
+      return response;
+
+    } catch (error) {
+      const processingTime = Date.now() - startTime;
+
+      this.loggerService.error(
+        'Invoice reprocessing failed',
+        error.stack,
+        'UploadController',
+        {
+          invoiceId,
+          processingTimeMs: processingTime,
+          correlationId,
+          error: error.message
+        }
+      );
+
+      if (error instanceof AppError) {
+        throw error;
+      }
+
+      throw AppError.processingError(
+        `Invoice reprocessing failed: ${error.message}`,
+        { originalError: error.message },
+        correlationId
+      );
     }
   }
 }

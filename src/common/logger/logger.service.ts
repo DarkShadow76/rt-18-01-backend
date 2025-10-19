@@ -12,10 +12,37 @@ export interface LogEntry {
   metadata?: Record<string, any>;
 }
 
+export interface PerformanceMetrics {
+  operation: string;
+  durationMs: number;
+  startTime: Date;
+  endTime: Date;
+  memoryUsage?: NodeJS.MemoryUsage;
+  cpuUsage?: NodeJS.CpuUsage;
+}
+
+export interface SecurityEvent {
+  type: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  source: string;
+  details: Record<string, any>;
+  timestamp: Date;
+}
+
+export interface DatabaseMetrics {
+  operation: string;
+  table: string;
+  durationMs: number;
+  rowsAffected?: number;
+  querySize?: number;
+  success: boolean;
+}
+
 @Injectable()
 export class LoggerService implements NestLoggerService {
   private readonly logger: Logger;
   private correlationId?: string;
+  private performanceTimers: Map<string, { startTime: Date; startCpuUsage: NodeJS.CpuUsage }> = new Map();
 
   constructor(private configService: ConfigurationService) {
     this.logger = this.createLogger();
@@ -144,32 +171,227 @@ export class LoggerService implements NestLoggerService {
   }
 
   // Performance monitoring methods
-  logPerformance(operation: string, durationMs: number, context?: string, metadata?: Record<string, any>): void {
-    this.logger.info(`Performance: ${operation} completed in ${durationMs}ms`, {
-      context,
-      correlationId: this.correlationId,
+  startPerformanceTimer(operationId: string): void {
+    this.performanceTimers.set(operationId, {
+      startTime: new Date(),
+      startCpuUsage: process.cpuUsage(),
+    });
+  }
+
+  endPerformanceTimer(operationId: string, operation: string, context?: string, metadata?: Record<string, any>): PerformanceMetrics | null {
+    const timer = this.performanceTimers.get(operationId);
+    if (!timer) {
+      this.warn(`Performance timer not found for operation: ${operationId}`, context);
+      return null;
+    }
+
+    const endTime = new Date();
+    const endCpuUsage = process.cpuUsage(timer.startCpuUsage);
+    const durationMs = endTime.getTime() - timer.startTime.getTime();
+    const memoryUsage = process.memoryUsage();
+
+    const metrics: PerformanceMetrics = {
       operation,
       durationMs,
+      startTime: timer.startTime,
+      endTime,
+      memoryUsage,
+      cpuUsage: endCpuUsage,
+    };
+
+    this.logPerformance(metrics, context, metadata);
+    this.performanceTimers.delete(operationId);
+
+    return metrics;
+  }
+
+  logPerformance(metrics: PerformanceMetrics, context?: string, metadata?: Record<string, any>): void {
+    const level = this.getPerformanceLogLevel(metrics.durationMs);
+    const message = `Performance: ${metrics.operation} completed in ${metrics.durationMs}ms`;
+
+    this.logger.log(level, message, {
+      context,
+      correlationId: this.correlationId,
+      performance: {
+        operation: metrics.operation,
+        durationMs: metrics.durationMs,
+        startTime: metrics.startTime.toISOString(),
+        endTime: metrics.endTime.toISOString(),
+        memoryUsage: {
+          rss: metrics.memoryUsage?.rss,
+          heapUsed: metrics.memoryUsage?.heapUsed,
+          heapTotal: metrics.memoryUsage?.heapTotal,
+          external: metrics.memoryUsage?.external,
+        },
+        cpuUsage: {
+          user: metrics.cpuUsage?.user,
+          system: metrics.cpuUsage?.system,
+        },
+      },
       ...metadata,
     });
   }
 
-  logSecurityEvent(event: string, details: Record<string, any>, context?: string): void {
-    this.logger.warn(`Security Event: ${event}`, {
+  private getPerformanceLogLevel(durationMs: number): string {
+    if (durationMs > 5000) return 'error'; // > 5 seconds
+    if (durationMs > 2000) return 'warn';  // > 2 seconds
+    if (durationMs > 1000) return 'info';  // > 1 second
+    return 'debug'; // <= 1 second
+  }
+
+  logSecurityEvent(event: SecurityEvent, context?: string): void {
+    const level = this.getSecurityLogLevel(event.severity);
+    const message = `Security Event: ${event.type} - ${event.severity.toUpperCase()}`;
+
+    this.logger.log(level, message, {
       context,
       correlationId: this.correlationId,
-      securityEvent: event,
-      ...details,
+      security: {
+        type: event.type,
+        severity: event.severity,
+        source: event.source,
+        timestamp: event.timestamp.toISOString(),
+        details: event.details,
+      },
     });
   }
 
-  logDatabaseOperation(operation: string, table: string, durationMs?: number, metadata?: Record<string, any>): void {
-    this.logger.debug(`Database: ${operation} on ${table}`, {
+  private getSecurityLogLevel(severity: SecurityEvent['severity']): string {
+    switch (severity) {
+      case 'critical':
+        return 'error';
+      case 'high':
+        return 'error';
+      case 'medium':
+        return 'warn';
+      case 'low':
+      default:
+        return 'info';
+    }
+  }
+
+  logDatabaseOperation(metrics: DatabaseMetrics, context?: string, metadata?: Record<string, any>): void {
+    const level = metrics.success ? 'debug' : 'error';
+    const message = `Database: ${metrics.operation} on ${metrics.table} - ${metrics.success ? 'SUCCESS' : 'FAILED'} (${metrics.durationMs}ms)`;
+
+    this.logger.log(level, message, {
+      context,
       correlationId: this.correlationId,
-      operation,
-      table,
-      durationMs,
+      database: {
+        operation: metrics.operation,
+        table: metrics.table,
+        durationMs: metrics.durationMs,
+        rowsAffected: metrics.rowsAffected,
+        querySize: metrics.querySize,
+        success: metrics.success,
+      },
       ...metadata,
+    });
+  }
+
+  // Structured logging methods
+  logApiRequest(method: string, url: string, statusCode: number, durationMs: number, metadata?: Record<string, any>): void {
+    const level = statusCode >= 500 ? 'error' : statusCode >= 400 ? 'warn' : 'info';
+    const message = `API Request: ${method} ${url} - ${statusCode} (${durationMs}ms)`;
+
+    this.logger.log(level, message, {
+      correlationId: this.correlationId,
+      api: {
+        method,
+        url,
+        statusCode,
+        durationMs,
+      },
+      ...metadata,
+    });
+  }
+
+  logBusinessEvent(event: string, entity: string, entityId: string, action: string, metadata?: Record<string, any>): void {
+    this.logger.info(`Business Event: ${event}`, {
+      correlationId: this.correlationId,
+      business: {
+        event,
+        entity,
+        entityId,
+        action,
+        timestamp: new Date().toISOString(),
+      },
+      ...metadata,
+    });
+  }
+
+  logExternalServiceCall(service: string, operation: string, durationMs: number, success: boolean, metadata?: Record<string, any>): void {
+    const level = success ? 'info' : 'error';
+    const message = `External Service: ${service}.${operation} - ${success ? 'SUCCESS' : 'FAILED'} (${durationMs}ms)`;
+
+    this.logger.log(level, message, {
+      correlationId: this.correlationId,
+      externalService: {
+        service,
+        operation,
+        durationMs,
+        success,
+        timestamp: new Date().toISOString(),
+      },
+      ...metadata,
+    });
+  }
+
+  // Audit logging
+  logAuditEvent(userId: string, action: string, resource: string, resourceId: string, changes?: Record<string, any>): void {
+    this.logger.info(`Audit: ${action} on ${resource}`, {
+      correlationId: this.correlationId,
+      audit: {
+        userId,
+        action,
+        resource,
+        resourceId,
+        changes,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+
+  // Health check logging
+  logHealthCheck(component: string, status: 'healthy' | 'unhealthy', details?: Record<string, any>): void {
+    const level = status === 'healthy' ? 'debug' : 'error';
+    const message = `Health Check: ${component} - ${status.toUpperCase()}`;
+
+    this.logger.log(level, message, {
+      correlationId: this.correlationId,
+      health: {
+        component,
+        status,
+        timestamp: new Date().toISOString(),
+        details,
+      },
+    });
+  }
+
+  // Configuration logging
+  logConfigurationLoad(configName: string, success: boolean, details?: Record<string, any>): void {
+    const level = success ? 'info' : 'error';
+    const message = `Configuration: ${configName} - ${success ? 'LOADED' : 'FAILED'}`;
+
+    this.logger.log(level, message, {
+      configuration: {
+        name: configName,
+        success,
+        timestamp: new Date().toISOString(),
+        details,
+      },
+    });
+  }
+
+  // Metrics aggregation
+  logMetrics(metrics: Record<string, number>, context?: string): void {
+    this.logger.info('Application Metrics', {
+      context,
+      correlationId: this.correlationId,
+      metrics: {
+        ...metrics,
+        timestamp: new Date().toISOString(),
+      },
     });
   }
 }

@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { UploadController } from './upload.controller';
-import { InvoiceService } from '../invoice/invoice.service';
+import { LoggerService } from '../common/logger/logger.service';
 
 describe('UploadController', () => {
   let controller: UploadController;
@@ -20,21 +20,40 @@ describe('UploadController', () => {
       }),
     };
 
-    const mockInvoiceService = {
-      saveInvoiceData: jest.fn().mockResolvedValue(undefined),
-      getAllInvoices: jest.fn().mockResolvedValue([]),
+    const mockInvoiceProcessingService = {
+      processInvoice: jest.fn().mockResolvedValue({
+        success: true,
+        invoiceId: 'test-id',
+        extractedData: {
+          invoiceNumber: 'INV-001',
+          totalAmount: 100,
+          dueDate: '2024-12-31'
+        }
+      }),
+      getProcessingStatus: jest.fn().mockResolvedValue({
+        status: 'completed',
+        progress: 100
+      }),
+    };
+
+    const mockLoggerService = {
+      log: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+      setContext: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UploadController],
       providers: [
         {
-          provide: ConfigService,
-          useValue: mockConfigService,
+          provide: 'IInvoiceProcessingService',
+          useValue: mockInvoiceProcessingService,
         },
         {
-          provide: InvoiceService,
-          useValue: mockInvoiceService,
+          provide: LoggerService,
+          useValue: mockLoggerService,
         },
       ],
     }).compile();

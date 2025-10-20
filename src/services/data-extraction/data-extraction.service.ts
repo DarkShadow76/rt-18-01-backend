@@ -131,10 +131,14 @@ export class DataExtractionService {
       // Calculate overall confidence
       const confidence = this.calculateOverallConfidence(extractedData);
 
-      // For null/empty input, ensure we fail validation in strict mode
+      // Determine success based on validation results and data availability
       const hasAnyData = Object.keys(extractedData).filter(key => !key.startsWith('_')).length > 0;
-      const shouldSucceed = !mergedOptions.strictValidation && hasAnyData || 
-                           (validationResult.validationErrors.length === 0 && hasAnyData);
+      const hasValidationErrors = validationResult.validationErrors.length > 0;
+      
+      // Success requires: having data AND no validation errors
+      // In strict mode, also require minimum confidence
+      const shouldSucceed = hasAnyData && !hasValidationErrors && 
+                           (!mergedOptions.strictValidation || confidence >= mergedOptions.minimumConfidence!);
 
       const result: DataExtractionResult = {
         success: shouldSucceed,
@@ -371,13 +375,13 @@ export class DataExtractionService {
       const fieldValue = data[rule.field as keyof ExtractedInvoiceData];
       const isRequired = this.isFieldRequired(rule.field, options);
 
-      if (isRequired && (fieldValue === undefined || fieldValue === null || fieldValue === '')) {
+      if (isRequired && (fieldValue === undefined || fieldValue === null)) {
         requiredFieldsMissing.push(rule.field);
         validationErrors.push(`Required field '${rule.field}' is missing`);
         continue;
       }
 
-      if (fieldValue !== undefined && fieldValue !== null && fieldValue !== '') {
+      if (fieldValue !== undefined && fieldValue !== null) {
         const validationResult = rule.validator(fieldValue);
         if (!validationResult.isValid) {
           if (isRequired) {
@@ -593,6 +597,7 @@ export class DataExtractionService {
 
   // Utility methods
   private cleanText(text: string): string {
+    if (!text) return '';
     return text.trim().replace(/\s+/g, ' ');
   }
 

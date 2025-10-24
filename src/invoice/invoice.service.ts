@@ -8,8 +8,8 @@ export class InvoiceService {
 
   constructor(private configService: ConfigService) {
     this.supabase = createClient(
-      this.configService.get<string>('SB_URL'),
-      this.configService.get<string>('SB_ANON_KEY'),
+      this.configService.get<string>('SUPABASE_URL'),
+      this.configService.get<string>('SUPABASE_ANON_KEY'),
     );
   }
 

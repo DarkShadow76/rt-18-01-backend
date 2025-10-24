@@ -20,6 +20,10 @@ import { ConfigModule } from '../../config/config.module';
   providers: [
     InvoiceProcessingService,
     {
+      provide: 'IInvoiceProcessingService',
+      useClass: InvoiceProcessingService
+    },
+    {
       provide: 'IFileValidationService',
       useClass: FileValidationService
     },
@@ -47,6 +51,7 @@ import { ConfigModule } from '../../config/config.module';
   ],
   exports: [
     InvoiceProcessingService,
+    'IInvoiceProcessingService',
     'IFileValidationService',
     'IDocumentAIService',
     'IDataExtractionService', 

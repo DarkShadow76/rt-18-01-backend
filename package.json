@@ -19,10 +19,11 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "migrate:up": "node migrations/run-migrations.js up",
-    "migrate:down": "node migrations/run-migrations.js down",
-    "migrate:status": "node migrations/run-migrations.js status",
-    "migrate:validate": "echo 'Run validate-schema.sql in Supabase SQL editor to validate migrations'"
+    "migration:up": "ts-node src/database/migrations/simple-migration-runner.ts up",
+    "migration:status": "ts-node src/database/migrations/simple-migration-runner.ts status",
+    "migration:validate": "ts-node src/database/migrations/simple-migration-runner.ts validate",
+    "migration:advanced": "ts-node -r tsconfig-paths/register src/database/migrations/migration.command.ts",
+    "migration:legacy": "node migrations/run-migrations.js"
   },
   "dependencies": {
     "@google-cloud/documentai": "^8.12.0",

@@ -1,0 +1,31 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "words": [
+    "Supabase",
+    "supabase",
+    "nestjs",
+    "typeorm",
+    "postgresql",
+    "jsonb",
+    "uuid",
+    "tsconfig",
+    "eslint",
+    "nestjs",
+    "dto",
+    "api",
+    "auth",
+    "middleware",
+    "validator",
+    "transformer",
+    "metadata",
+    "rollback",
+    "migrations"
+  ],
+  "ignorePaths": [
+    "node_modules/**",
+    "dist/**",
+    "coverage/**",
+    "*.log"
+  ]
+}
